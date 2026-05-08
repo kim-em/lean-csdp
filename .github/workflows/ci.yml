@@ -41,7 +41,7 @@ jobs:
           ./scripts/install-toolchain.sh
 
       - name: Build
-        run: lake build
+        run: lake build LeanCsdp csdp-example
 
       - name: Run example
         run: |
@@ -93,7 +93,7 @@ jobs:
           ./scripts/install-toolchain.sh
 
       - name: Build
-        run: lake build
+        run: lake build LeanCsdp csdp-example
 
       - name: Run example
         run: |
@@ -138,8 +138,9 @@ jobs:
           curl -sSf -L https://github.com/leanprover/elan/releases/latest/download/elan-x86_64-pc-windows-msvc.zip -o elan-init.zip
           unzip -q elan-init.zip
           MSYS2_ARG_CONV_EXCL="*" ./elan-init.exe -y --default-toolchain none --no-modify-path
-          ELAN_DIR_WIN="$(cmd /c "echo %USERPROFILE%\\.elan" | tr -d '\r')"
-          ELAN_DIR_MSYS="$(cygpath -u "$ELAN_DIR_WIN")"
+          # `$USERPROFILE` is provided by MSYS2 from the Windows environment;
+          # cygpath converts it to a POSIX path the rest of the shell can use.
+          ELAN_DIR_MSYS="$(cygpath -u "$USERPROFILE")/.elan"
           ls -la "$ELAN_DIR_MSYS/bin" || (echo "elan install did not produce expected files" && exit 1)
           echo "ELAN_HOME=$ELAN_DIR_MSYS" >> "$GITHUB_ENV"
           echo "$ELAN_DIR_MSYS/bin" >> "$GITHUB_PATH"
@@ -149,7 +150,7 @@ jobs:
         run: ./scripts/install-toolchain.sh
 
       - name: Build
-        run: lake build
+        run: lake build LeanCsdp csdp-example
 
       - name: Run example
         run: |
