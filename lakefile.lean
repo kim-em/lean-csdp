@@ -1,8 +1,6 @@
 import Lake
 open System Lake DSL
 
-package leanCsdp where
-
 /-! ## Platform-specific BLAS / LAPACK linkage. -/
 
 /--
@@ -46,6 +44,14 @@ def blasLapackLinkArgs : Array String :=
        "-L/usr/lib64",
        "-L/usr/lib",
        "-llapack", "-lblas", "-l:libgfortran.so.5", "-lm" ]
+
+package leanCsdp where
+  -- Forwarded to every link command in the package, including the
+  -- `:shared` derivations Lake generates from each `extern_lib`. Without
+  -- this, building `csdp.dll` on Windows fails to resolve BLAS / LAPACK
+  -- symbols (Windows DLLs require all symbols at link time, unlike the
+  -- `dynamic_lookup` used on macOS or the equivalent on Linux).
+  moreLinkArgs := blasLapackLinkArgs
 
 /-! ## CSDP object compilation. -/
 
