@@ -45,9 +45,11 @@ jobs:
 
       - name: Run example
         run: |
+          set +e
           ./.lake/build/bin/csdp-example > /tmp/csdp.out 2>&1
-          tail -10 /tmp/csdp.out
-          # Sanity: example main exits 0 only if pobj is within tol of 2.75.
+          rc=$?
+          tail -20 /tmp/csdp.out
+          exit $rc
 
   macos:
     name: macOS
@@ -95,8 +97,11 @@ jobs:
 
       - name: Run example
         run: |
+          set +e
           ./.lake/build/bin/csdp-example > /tmp/csdp.out 2>&1
-          tail -10 /tmp/csdp.out
+          rc=$?
+          tail -20 /tmp/csdp.out
+          exit $rc
 
   windows:
     name: Windows (MSYS2 / mingw-w64)
@@ -123,17 +128,17 @@ jobs:
             unzip
 
       # On Windows the elan installer is the .exe variant inside a zip.
-      # We invoke it via cmd.exe so the install completes in a normal
-      # Windows console environment, then point PATH at the elan and
-      # mingw64 bin dirs (translated to MSYS2 paths).
+      # We invoke it directly from MSYS2 bash; MSYS2's PATH conversion
+      # makes the binary work transparently. After install, elan and the
+      # toolchain live under %USERPROFILE%\.elan, which in MSYS2 maps to
+      # /c/Users/.../.elan rather than $HOME/.elan.
       - name: Install elan
         run: |
           set -e
           curl -sSf -L https://github.com/leanprover/elan/releases/latest/download/elan-x86_64-pc-windows-msvc.zip -o elan-init.zip
           unzip -q elan-init.zip
-          ELAN_INIT_WIN="$(cygpath -w "$PWD/elan-init.exe")"
-          cmd.exe //c "\"$ELAN_INIT_WIN\" -y --default-toolchain none --no-modify-path"
-          ELAN_DIR_WIN="$(cmd.exe //c "echo %USERPROFILE%\\.elan" | tr -d '\r')"
+          MSYS2_ARG_CONV_EXCL="*" ./elan-init.exe -y --default-toolchain none --no-modify-path
+          ELAN_DIR_WIN="$(cmd /c "echo %USERPROFILE%\\.elan" | tr -d '\r')"
           ELAN_DIR_MSYS="$(cygpath -u "$ELAN_DIR_WIN")"
           ls -la "$ELAN_DIR_MSYS/bin" || (echo "elan install did not produce expected files" && exit 1)
           echo "ELAN_HOME=$ELAN_DIR_MSYS" >> "$GITHUB_ENV"

@@ -38,11 +38,14 @@ def blasLapackLinkArgs : Array String :=
     -- the toolchain dir, so system library paths need to be added
     -- explicitly. We probe the standard Debian/Ubuntu and Red Hat /
     -- Fedora locations.
+    -- We use `-l:libgfortran.so.5` (the SONAME of the runtime library) so
+    -- linking does not depend on the gfortran-dev package being installed
+    -- and leaving a `libgfortran.so` symlink behind.
     #[ "-L/usr/lib/x86_64-linux-gnu",
        "-L/usr/lib/aarch64-linux-gnu",
        "-L/usr/lib64",
        "-L/usr/lib",
-       "-llapack", "-lblas", "-lgfortran", "-lm" ]
+       "-llapack", "-lblas", "-l:libgfortran.so.5", "-lm" ]
 
 /-! ## CSDP object compilation. -/
 
