@@ -28,7 +28,10 @@ def blasLapackLinkArgs : Array String :=
     -- `--sysroot` pointing at the Lean toolchain.
     #[s!"-Wl,-syslibroot,{macSdkPath}", "-framework", "Accelerate"]
   else if System.Platform.isWindows then
-    #["-lopenblas", "-lgfortran", "-lquadmath", "-lm"]
+    -- `-L` paths cover the typical MSYS2 mingw64 install location so that
+    -- Lean's bundled lld can find the OpenBLAS / Fortran runtime libraries
+    -- that we install via pacman in CI.
+    #["-LC:/msys64/mingw64/lib", "-lopenblas", "-lgfortran", "-lquadmath", "-lm"]
   else
     #["-llapack", "-lblas", "-lgfortran", "-lm"]
 
