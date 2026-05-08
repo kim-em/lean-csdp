@@ -141,6 +141,11 @@ jobs:
           ls -la "$ELAN_DIR_MSYS/bin" || (echo "elan install did not produce expected files" && exit 1)
           export ELAN_HOME="$ELAN_DIR_MSYS"
           export PATH="$ELAN_DIR_MSYS/bin:/c/msys64/mingw64/bin:$PATH"
+          # Probe that the BLAS / LAPACK libraries are present where the
+          # lakefile expects them; surface their actual location and shape
+          # in the log to make link failures diagnosable.
+          echo "MSYS2 mingw64 lib contents (openblas/gfortran/quadmath):"
+          ls /c/msys64/mingw64/lib/libopenblas* /c/msys64/mingw64/lib/libgfortran* /c/msys64/mingw64/lib/libquadmath* 2>&1 || true
           ./scripts/install-toolchain.sh
           lake build LeanCsdp csdp-example
           set +e
