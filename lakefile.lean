@@ -26,10 +26,14 @@ def blasLapackLinkArgs : Array String :=
     -- `--sysroot` pointing at the Lean toolchain.
     #[s!"-Wl,-syslibroot,{macSdkPath}", "-framework", "Accelerate"]
   else if System.Platform.isWindows then
-    -- `-L` paths cover the typical MSYS2 mingw64 install location so that
-    -- Lean's bundled lld can find the OpenBLAS / Fortran runtime libraries
-    -- that we install via pacman in CI.
-    #["-LC:/msys64/mingw64/lib", "-lopenblas", "-lgfortran", "-lquadmath", "-lm"]
+    -- The MSYS2 mingw64 install dir varies (default `C:\msys64`, GitHub
+    -- runner setup-msys2 places it under `RUNNER_TEMP`). To avoid hard
+    -- coding either, callers are expected to populate `vendor/mingw-libs`
+    -- under the package root with the runtime libraries (CI does this).
+    -- Local installs at the standard location are also picked up.
+    #["-Lvendor/mingw-libs",
+      "-LC:/msys64/mingw64/lib",
+      "-lopenblas", "-lgfortran", "-lquadmath", "-lm"]
   else
     -- Linux: reference BLAS + LAPACK packages plus the gfortran runtime
     -- (LAPACK is Fortran code). Lean's bundled clang sets `--sysroot` to

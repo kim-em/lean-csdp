@@ -7,3 +7,4 @@ build/
 *.dylib
 *.dll
 .DS_Store
+vendor/
