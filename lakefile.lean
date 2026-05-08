@@ -63,15 +63,16 @@ def csdpSrcs : Array String := #[
 
 def csdpCFlags (pkg : Package) : Array String :=
   let inc := pkg.dir / "csdp" / "include"
-  let base : Array String := #[
-    "-O2", "-DBIT64", "-DNOSHORTS", "-fPIC",
-    -- CSDP's source predates strict prototypes; suppress related warnings.
-    "-Wno-implicit-function-declaration",
-    "-Wno-deprecated-non-prototype",
-    "-Wno-old-style-definition",
-    "-I", inc.toString
-  ]
-  base
+  -- CSDP's source uses K&R-style definitions and unprototyped declarations
+  -- (`int foo()` meaning "any args"). Modern C compilers default to C23,
+  -- where `()` means `(void)` and the K&R bodies are reported as
+  -- prototype mismatches. Force gnu89 so the legacy semantics apply, and
+  -- silence the residual -W warnings.
+  #[ "-O2", "-DBIT64", "-DNOSHORTS", "-fPIC", "-std=gnu89",
+     "-Wno-implicit-function-declaration",
+     "-Wno-deprecated-non-prototype",
+     "-Wno-old-style-definition",
+     "-I", inc.toString ]
 
 private def csdpOTarget (pkg : Package) (src : String) :
     FetchM (Job FilePath) := do
