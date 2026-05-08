@@ -92,11 +92,6 @@ private def csdpOTarget (pkg : Package) (src : String) :
   buildFileAfterDep oFile srcTarget fun srcFile => do
     compileO oFile srcFile (csdpCFlags pkg)
 
-extern_lib csdp (pkg) := do
-  let name := nameToStaticLib "csdp"
-  let oTargets ← csdpSrcs.mapM (csdpOTarget pkg)
-  buildStaticLib (pkg.staticLibDir / name) oTargets
-
 /-! ## Lean ↔ CSDP bridge. -/
 
 def bridgeSrcs : Array String := #["lean_csdp.c", "lean_csdp_bridge.c"]
@@ -117,10 +112,19 @@ private def bridgeOTarget (pkg : Package) (src : String) :
       "-I", ffiInc
     ]
 
-extern_lib leancsdp_ffi (pkg) := do
-  let name := nameToStaticLib "leancsdp_ffi"
-  let oTargets ← bridgeSrcs.mapM (bridgeOTarget pkg)
-  buildStaticLib (pkg.staticLibDir / name) oTargets
+/--
+Single combined static library containing both the CSDP solver objects and
+the Lean ↔ CSDP bridge. Lake produces a `:shared` derivation per
+`extern_lib`; each derivation must resolve all of its symbols against
+its own arguments. By bundling the bridge with CSDP, the resulting
+shared library only has BLAS/LAPACK as an external dependency, which the
+package-level `moreLinkArgs` provides.
+-/
+extern_lib leancsdp (pkg) := do
+  let name := nameToStaticLib "leancsdp"
+  let csdpOs ← csdpSrcs.mapM (csdpOTarget pkg)
+  let bridgeOs ← bridgeSrcs.mapM (bridgeOTarget pkg)
+  buildStaticLib (pkg.staticLibDir / name) (csdpOs ++ bridgeOs)
 
 /-! ## Lean library and executables. -/
 
@@ -128,14 +132,11 @@ extern_lib leancsdp_ffi (pkg) := do
 lean_lib LeanCsdp where
   precompileModules := true
   moreLinkArgs :=
-    let csdp := defaultBuildDir / "lib" / nameToStaticLib "csdp"
-    let bridge := defaultBuildDir / "lib" / nameToStaticLib "leancsdp_ffi"
-    -- Order matters: bridge depends on csdp; csdp depends on BLAS/LAPACK.
-    #[bridge.toString, csdp.toString] ++ blasLapackLinkArgs
+    let lib := defaultBuildDir / "lib" / nameToStaticLib "leancsdp"
+    #[lib.toString] ++ blasLapackLinkArgs
 
 lean_exe «csdp-example» where
   root := `Main
   moreLinkArgs :=
-    let csdp := defaultBuildDir / "lib" / nameToStaticLib "csdp"
-    let bridge := defaultBuildDir / "lib" / nameToStaticLib "leancsdp_ffi"
-    #[bridge.toString, csdp.toString] ++ blasLapackLinkArgs
+    let lib := defaultBuildDir / "lib" / nameToStaticLib "leancsdp"
+    #[lib.toString] ++ blasLapackLinkArgs
