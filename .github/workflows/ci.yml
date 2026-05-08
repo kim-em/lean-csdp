@@ -128,26 +128,24 @@ jobs:
             unzip
 
       # On Windows the elan installer is the .exe variant inside a zip.
-      # We invoke it directly from MSYS2 bash; MSYS2's PATH conversion
-      # makes the binary work transparently. After install, elan and the
-      # toolchain live under %USERPROFILE%\.elan, which in MSYS2 maps to
-      # /c/Users/.../.elan rather than $HOME/.elan.
-      - name: Install elan
+      # We do the full install + toolchain install in one MSYS2 step so that
+      # the PATH/ELAN_HOME exports are visible without needing to round-trip
+      # through GitHub's environment files.
+      - name: Install elan and Lean toolchain
         run: |
           set -e
           curl -sSf -L https://github.com/leanprover/elan/releases/latest/download/elan-x86_64-pc-windows-msvc.zip -o elan-init.zip
           unzip -q elan-init.zip
           MSYS2_ARG_CONV_EXCL="*" ./elan-init.exe -y --default-toolchain none --no-modify-path
-          # `$USERPROFILE` is provided by MSYS2 from the Windows environment;
-          # cygpath converts it to a POSIX path the rest of the shell can use.
           ELAN_DIR_MSYS="$(cygpath -u "$USERPROFILE")/.elan"
           ls -la "$ELAN_DIR_MSYS/bin" || (echo "elan install did not produce expected files" && exit 1)
+          export ELAN_HOME="$ELAN_DIR_MSYS"
+          export PATH="$ELAN_DIR_MSYS/bin:/c/msys64/mingw64/bin:$PATH"
+          # Persist for the remaining steps too.
           echo "ELAN_HOME=$ELAN_DIR_MSYS" >> "$GITHUB_ENV"
           echo "$ELAN_DIR_MSYS/bin" >> "$GITHUB_PATH"
           echo "/c/msys64/mingw64/bin" >> "$GITHUB_PATH"
-
-      - name: Install Lean toolchain
-        run: ./scripts/install-toolchain.sh
+          ./scripts/install-toolchain.sh
 
       - name: Build
         run: lake build LeanCsdp csdp-example

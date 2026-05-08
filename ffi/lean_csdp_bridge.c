@@ -14,6 +14,20 @@
 
 #include "lean_csdp.h"
 
+/*
+ * Lean's bundled clang on Linux still references `__libc_csu_init` /
+ * `__libc_csu_fini` in its CRT, but glibc 2.34+ removed these symbols.
+ * Provide weak no-op definitions so executables link against modern
+ * glibc on the runner. Shared libraries don't need them; only the final
+ * `lean_exe` link does.
+ */
+#if defined(__linux__) && defined(__GLIBC__)
+__attribute__((weak)) void __libc_csu_init(int argc, char **argv, char **envp) {
+  (void)argc; (void)argv; (void)envp;
+}
+__attribute__((weak)) void __libc_csu_fini(void) { }
+#endif
+
 static inline const int *byte_array_as_int(b_lean_obj_arg arr) {
   return (const int *)lean_sarray_cptr(arr);
 }
