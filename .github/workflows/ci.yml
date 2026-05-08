@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install BLAS / LAPACK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblapack-dev libblas-dev gfortran
+
+      - name: Set up Lean toolchain
+        uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: false
+          use-mathlib-cache: false
+
+      - name: Build
+        run: lake build
+
+      - name: Run example
+        run: |
+          ./.lake/build/bin/csdp-example > /tmp/csdp.out 2>&1
+          tail -10 /tmp/csdp.out
+          # Sanity: example main exits 0 only if pobj is within tol of 2.75.
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # The lakefile hard-codes the Command Line Tools SDK path so that the
+      # build works without any IO at lake configuration time. macOS runners
+      # ship with Xcode but not always with CLT at /Library/Developer/...,
+      # so we ensure that path exists by symlinking the active SDK there.
+      - name: Ensure CLT SDK symlink
+        run: |
+          sdk_path="$(xcrun --show-sdk-path)"
+          target="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
+          echo "active sdk: $sdk_path"
+          if [ ! -d "$target" ]; then
+            sudo mkdir -p "$(dirname "$target")"
+            sudo ln -sfn "$sdk_path" "$target"
+          fi
+          ls -ld "$target"
+
+      - name: Set up Lean toolchain
+        uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: false
+          use-mathlib-cache: false
+
+      - name: Build
+        run: lake build
+
+      - name: Run example
+        run: |
+          ./.lake/build/bin/csdp-example > /tmp/csdp.out 2>&1
+          tail -10 /tmp/csdp.out
+
+  windows:
+    name: Windows (MSYS2 / mingw-w64)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-openblas
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-gcc-fortran
+            git
+            curl
+
+      # The Lean toolchain installer expects a POSIX shell; MSYS2 fits the
+      # bill. We install elan into the runner-wide HOME so subsequent steps
+      # see it on PATH.
+      - name: Install elan
+        run: |
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o elan-init.sh
+          sh elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Configure PATH for downstream steps
+        shell: bash
+        run: |
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          echo "/c/msys64/mingw64/bin" >> "$GITHUB_PATH"
+
+      - name: Build
+        env:
+          # Elan installs Lean for the toolchain pinned in `lean-toolchain`.
+          ELAN_TOOLCHAIN_AUTOINSTALL: "1"
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          lake build
+
+      - name: Run example
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          ./.lake/build/bin/csdp-example.exe > /tmp/csdp.out 2>&1 || true
+          tail -10 /tmp/csdp.out

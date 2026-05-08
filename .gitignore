@@ -1,0 +1,9 @@
+.lake/
+build/
+*.olean
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+.DS_Store
