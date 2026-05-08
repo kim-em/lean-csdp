@@ -127,11 +127,11 @@ jobs:
             curl
             unzip
 
-      # On Windows the elan installer is the .exe variant inside a zip.
-      # We do the full install + toolchain install in one MSYS2 step so that
-      # the PATH/ELAN_HOME exports are visible without needing to round-trip
-      # through GitHub's environment files.
-      - name: Install elan and Lean toolchain
+      # On Windows the GITHUB_PATH/GITHUB_ENV files written from the MSYS2
+      # shell are not always honoured for subsequent steps, so we install
+      # elan, build, and run the example all in one shell session that
+      # sets up PATH locally.
+      - name: Install elan, build, and run example
         run: |
           set -e
           curl -sSf -L https://github.com/leanprover/elan/releases/latest/download/elan-x86_64-pc-windows-msvc.zip -o elan-init.zip
@@ -141,16 +141,10 @@ jobs:
           ls -la "$ELAN_DIR_MSYS/bin" || (echo "elan install did not produce expected files" && exit 1)
           export ELAN_HOME="$ELAN_DIR_MSYS"
           export PATH="$ELAN_DIR_MSYS/bin:/c/msys64/mingw64/bin:$PATH"
-          # Persist for the remaining steps too.
-          echo "ELAN_HOME=$ELAN_DIR_MSYS" >> "$GITHUB_ENV"
-          echo "$ELAN_DIR_MSYS/bin" >> "$GITHUB_PATH"
-          echo "/c/msys64/mingw64/bin" >> "$GITHUB_PATH"
           ./scripts/install-toolchain.sh
-
-      - name: Build
-        run: lake build LeanCsdp csdp-example
-
-      - name: Run example
-        run: |
-          ./.lake/build/bin/csdp-example.exe > /tmp/csdp.out 2>&1 || true
-          tail -10 /tmp/csdp.out
+          lake build LeanCsdp csdp-example
+          set +e
+          ./.lake/build/bin/csdp-example.exe > /tmp/csdp.out 2>&1
+          rc=$?
+          tail -20 /tmp/csdp.out
+          exit $rc

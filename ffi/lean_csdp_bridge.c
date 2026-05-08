@@ -15,17 +15,32 @@
 #include "lean_csdp.h"
 
 /*
- * Lean's bundled clang on Linux still references `__libc_csu_init` /
+ * Lean's bundled clang on Linux still references `__libc_csu_init` and
  * `__libc_csu_fini` in its CRT, but glibc 2.34+ removed these symbols.
- * Provide weak no-op definitions so executables link against modern
- * glibc on the runner. Shared libraries don't need them; only the final
- * `lean_exe` link does.
+ * Provide compatible definitions that walk the standard `.init_array` and
+ * `.fini_array` sections so global constructors / destructors still run.
+ * No-op stubs would link but leave the C++ runtime uninitialised, which
+ * crashes inside the Lean runtime later.
  */
 #if defined(__linux__) && defined(__GLIBC__)
+typedef void (*csu_init_fn)(int, char **, char **);
+typedef void (*csu_fini_fn)(void);
+
+extern csu_init_fn __init_array_start[] __attribute__((weak, visibility("hidden")));
+extern csu_init_fn __init_array_end[]   __attribute__((weak, visibility("hidden")));
+extern csu_fini_fn __fini_array_start[] __attribute__((weak, visibility("hidden")));
+extern csu_fini_fn __fini_array_end[]   __attribute__((weak, visibility("hidden")));
+
 __attribute__((weak)) void __libc_csu_init(int argc, char **argv, char **envp) {
-  (void)argc; (void)argv; (void)envp;
+  for (size_t i = 0; &__init_array_start[i] != __init_array_end; ++i) {
+    __init_array_start[i](argc, argv, envp);
+  }
 }
-__attribute__((weak)) void __libc_csu_fini(void) { }
+
+__attribute__((weak)) void __libc_csu_fini(void) {
+  size_t i = (size_t)(__fini_array_end - __fini_array_start);
+  while (i-- > 0) __fini_array_start[i]();
+}
 #endif
 
 static inline const int *byte_array_as_int(b_lean_obj_arg arr) {
