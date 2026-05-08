@@ -33,7 +33,16 @@ def blasLapackLinkArgs : Array String :=
     -- that we install via pacman in CI.
     #["-LC:/msys64/mingw64/lib", "-lopenblas", "-lgfortran", "-lquadmath", "-lm"]
   else
-    #["-llapack", "-lblas", "-lgfortran", "-lm"]
+    -- Linux: reference BLAS + LAPACK packages plus the gfortran runtime
+    -- (LAPACK is Fortran code). Lean's bundled clang sets `--sysroot` to
+    -- the toolchain dir, so system library paths need to be added
+    -- explicitly. We probe the standard Debian/Ubuntu and Red Hat /
+    -- Fedora locations.
+    #[ "-L/usr/lib/x86_64-linux-gnu",
+       "-L/usr/lib/aarch64-linux-gnu",
+       "-L/usr/lib64",
+       "-L/usr/lib",
+       "-llapack", "-lblas", "-lgfortran", "-lm" ]
 
 /-! ## CSDP object compilation. -/
 
