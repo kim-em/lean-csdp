@@ -24,12 +24,30 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y liblapack-dev libblas-dev gfortran
 
-      - name: Set up Lean toolchain
-        uses: leanprover/lean-action@v1
-        with:
-          auto-config: false
-          build: false
-          use-mathlib-cache: false
+      # Install elan + the toolchain pinned in lean-toolchain. We do this
+      # manually with a retry loop because the public release server has
+      # been intermittently flaky during our CI runs.
+      - name: Install elan and Lean toolchain (with retries)
+        shell: bash
+        run: |
+          set -e
+          if ! command -v elan >/dev/null 2>&1; then
+            curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o elan-init.sh
+            sh elan-init.sh -y --default-toolchain none
+          fi
+          export PATH="$HOME/.elan/bin:$PATH"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          toolchain="$(tr -d '\r\n' < lean-toolchain)"
+          echo "Installing toolchain: $toolchain"
+          for attempt in 1 2 3 4 5; do
+            if elan toolchain install --no-self-update "$toolchain"; then
+              break
+            fi
+            echo "Toolchain install attempt $attempt failed; retrying in 30s..."
+            sleep 30
+          done
+          elan default "$toolchain"
+          lean --version
 
       - name: Build
         run: lake build
@@ -63,12 +81,30 @@ jobs:
           fi
           ls -ld "$target"
 
-      - name: Set up Lean toolchain
-        uses: leanprover/lean-action@v1
-        with:
-          auto-config: false
-          build: false
-          use-mathlib-cache: false
+      # Install elan + the toolchain pinned in lean-toolchain. We do this
+      # manually with a retry loop because the public release server has
+      # been intermittently flaky during our CI runs.
+      - name: Install elan and Lean toolchain (with retries)
+        shell: bash
+        run: |
+          set -e
+          if ! command -v elan >/dev/null 2>&1; then
+            curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o elan-init.sh
+            sh elan-init.sh -y --default-toolchain none
+          fi
+          export PATH="$HOME/.elan/bin:$PATH"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          toolchain="$(tr -d '\r\n' < lean-toolchain)"
+          echo "Installing toolchain: $toolchain"
+          for attempt in 1 2 3 4 5; do
+            if elan toolchain install --no-self-update "$toolchain"; then
+              break
+            fi
+            echo "Toolchain install attempt $attempt failed; retrying in 30s..."
+            sleep 30
+          done
+          elan default "$toolchain"
+          lean --version
 
       - name: Build
         run: lake build
@@ -100,26 +136,31 @@ jobs:
             mingw-w64-x86_64-gcc-fortran
             git
             curl
+            unzip
 
       # The Lean toolchain installer expects a POSIX shell; MSYS2 fits the
-      # bill. We install elan into the runner-wide HOME so subsequent steps
-      # see it on PATH.
-      - name: Install elan
+      # bill. We retry the toolchain install because the public release
+      # server has been intermittently flaky during our CI runs.
+      - name: Install elan and Lean toolchain (with retries)
         run: |
+          set -e
           curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o elan-init.sh
           sh elan-init.sh -y --default-toolchain none
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-
-      - name: Configure PATH for downstream steps
-        shell: bash
-        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
           echo "/c/msys64/mingw64/bin" >> "$GITHUB_PATH"
+          toolchain="$(tr -d '\r\n' < lean-toolchain)"
+          for attempt in 1 2 3 4 5; do
+            if elan toolchain install --no-self-update "$toolchain"; then
+              break
+            fi
+            echo "Toolchain install attempt $attempt failed; retrying in 30s..."
+            sleep 30
+          done
+          elan default "$toolchain"
+          lean --version
 
       - name: Build
-        env:
-          # Elan installs Lean for the toolchain pinned in `lean-toolchain`.
-          ELAN_TOOLCHAIN_AUTOINSTALL: "1"
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           lake build
