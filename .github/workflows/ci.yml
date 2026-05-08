@@ -22,12 +22,13 @@ jobs:
       - name: Install BLAS / LAPACK
         run: |
           sudo apt-get update
-          sudo apt-get install -y liblapack-dev libblas-dev gfortran
+          # `zstd` is required by our toolchain-install fallback.
+          sudo apt-get install -y liblapack-dev libblas-dev gfortran zstd
 
-      # Install elan + the toolchain pinned in lean-toolchain. We do this
-      # manually with a retry loop because the public release server has
-      # been intermittently flaky during our CI runs.
-      - name: Install elan and Lean toolchain (with retries)
+      # Install elan and the toolchain pinned in lean-toolchain. We retry
+      # via elan first, then fall back to a direct GitHub-release download
+      # because the canonical release server is intermittently unreachable.
+      - name: Install elan and Lean toolchain
         shell: bash
         run: |
           set -e
@@ -35,19 +36,9 @@ jobs:
             curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o elan-init.sh
             sh elan-init.sh -y --default-toolchain none
           fi
-          export PATH="$HOME/.elan/bin:$PATH"
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-          toolchain="$(tr -d '\r\n' < lean-toolchain)"
-          echo "Installing toolchain: $toolchain"
-          for attempt in 1 2 3 4 5; do
-            if elan toolchain install --no-self-update "$toolchain"; then
-              break
-            fi
-            echo "Toolchain install attempt $attempt failed; retrying in 30s..."
-            sleep 30
-          done
-          elan default "$toolchain"
-          lean --version
+          export PATH="$HOME/.elan/bin:$PATH"
+          ./scripts/install-toolchain.sh
 
       - name: Build
         run: lake build
@@ -66,6 +57,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Install zstd (for toolchain fallback)
+        run: brew install zstd
+
       # The lakefile hard-codes the Command Line Tools SDK path so that the
       # build works without any IO at lake configuration time. macOS runners
       # ship with Xcode but not always with CLT at /Library/Developer/...,
@@ -81,10 +75,10 @@ jobs:
           fi
           ls -ld "$target"
 
-      # Install elan + the toolchain pinned in lean-toolchain. We do this
-      # manually with a retry loop because the public release server has
-      # been intermittently flaky during our CI runs.
-      - name: Install elan and Lean toolchain (with retries)
+      # Install elan and the toolchain pinned in lean-toolchain. We retry
+      # via elan first, then fall back to a direct GitHub-release download
+      # because the canonical release server is intermittently unreachable.
+      - name: Install elan and Lean toolchain
         shell: bash
         run: |
           set -e
@@ -92,19 +86,9 @@ jobs:
             curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o elan-init.sh
             sh elan-init.sh -y --default-toolchain none
           fi
-          export PATH="$HOME/.elan/bin:$PATH"
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-          toolchain="$(tr -d '\r\n' < lean-toolchain)"
-          echo "Installing toolchain: $toolchain"
-          for attempt in 1 2 3 4 5; do
-            if elan toolchain install --no-self-update "$toolchain"; then
-              break
-            fi
-            echo "Toolchain install attempt $attempt failed; retrying in 30s..."
-            sleep 30
-          done
-          elan default "$toolchain"
-          lean --version
+          export PATH="$HOME/.elan/bin:$PATH"
+          ./scripts/install-toolchain.sh
 
       - name: Build
         run: lake build
@@ -138,35 +122,30 @@ jobs:
             curl
             unzip
 
-      # The Lean toolchain installer expects a POSIX shell; MSYS2 fits the
-      # bill. We retry the toolchain install because the public release
-      # server has been intermittently flaky during our CI runs.
-      - name: Install elan and Lean toolchain (with retries)
+      # On Windows the elan installer is the .exe variant inside a zip; we
+      # download and run it directly. After install, elan and the
+      # toolchain live under the Windows %USERPROFILE%, which in MSYS2 is
+      # /c/Users/.../.elan rather than $HOME/.elan.
+      - name: Install elan and Lean toolchain
         run: |
           set -e
-          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o elan-init.sh
-          sh elan-init.sh -y --default-toolchain none
-          export PATH="$HOME/.elan/bin:$PATH"
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          curl -sSf -L https://github.com/leanprover/elan/releases/latest/download/elan-x86_64-pc-windows-msvc.zip -o elan-init.zip
+          unzip -q elan-init.zip
+          ./elan-init.exe -y --default-toolchain none
+          # Locate the elan home dir on Windows (USERPROFILE) and convert
+          # to MSYS path for use in PATH.
+          ELAN_DIR_WIN="$(cmd.exe /c "echo %USERPROFILE%\\.elan" | tr -d '\r')"
+          ELAN_DIR_MSYS="$(cygpath -u "$ELAN_DIR_WIN")"
+          export ELAN_HOME="$ELAN_DIR_MSYS"
+          export PATH="$ELAN_DIR_MSYS/bin:$PATH"
+          echo "$ELAN_DIR_MSYS/bin" >> "$GITHUB_PATH"
           echo "/c/msys64/mingw64/bin" >> "$GITHUB_PATH"
-          toolchain="$(tr -d '\r\n' < lean-toolchain)"
-          for attempt in 1 2 3 4 5; do
-            if elan toolchain install --no-self-update "$toolchain"; then
-              break
-            fi
-            echo "Toolchain install attempt $attempt failed; retrying in 30s..."
-            sleep 30
-          done
-          elan default "$toolchain"
-          lean --version
+          ./scripts/install-toolchain.sh
 
       - name: Build
-        run: |
-          export PATH="$HOME/.elan/bin:$PATH"
-          lake build
+        run: lake build
 
       - name: Run example
         run: |
-          export PATH="$HOME/.elan/bin:$PATH"
           ./.lake/build/bin/csdp-example.exe > /tmp/csdp.out 2>&1 || true
           tail -10 /tmp/csdp.out
