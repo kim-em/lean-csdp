@@ -126,17 +126,21 @@ extern_lib leancsdp (pkg) := do
   let bridgeOs ← bridgeSrcs.mapM (bridgeOTarget pkg)
   buildStaticLib (pkg.staticLibDir / name) (csdpOs ++ bridgeOs)
 
-/-! ## Lean library and executables. -/
+/-! ## Lean library and executables.
+
+`extern_lib leancsdp` produces a static-library target that Lake
+automatically links into the package's Lean modules and executables.
+We don't manually reference the static lib's path here — that
+breaks downstream consumption (the relative path resolves to the
+consumer's cwd, not lean-csdp's). The `moreLinkArgs` only adds the
+BLAS/LAPACK runtime linker args, which Lake doesn't infer.
+-/
 
 @[default_target]
 lean_lib LeanCsdp where
   precompileModules := true
-  moreLinkArgs :=
-    let lib := defaultBuildDir / "lib" / nameToStaticLib "leancsdp"
-    #[lib.toString] ++ blasLapackLinkArgs
+  moreLinkArgs := blasLapackLinkArgs
 
 lean_exe «csdp-example» where
   root := `Main
-  moreLinkArgs :=
-    let lib := defaultBuildDir / "lib" / nameToStaticLib "leancsdp"
-    #[lib.toString] ++ blasLapackLinkArgs
+  moreLinkArgs := blasLapackLinkArgs

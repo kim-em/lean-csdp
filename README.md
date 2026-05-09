@@ -12,7 +12,7 @@ subject to   tr(Aᵢ · X) = bᵢ        for i = 1, …, k
              X ⪰ 0  with block-diagonal structure
 ```
 
-CSDP itself (release 6.2.0) is vendored as a git submodule; this package
+CSDP itself (release 6.2.0) is vendored under `csdp/`; this package
 builds it from source against the system BLAS/LAPACK runtime.
 
 ## Using
@@ -52,7 +52,7 @@ each platform.
 ## Building locally
 
 ```
-git clone --recursive https://github.com/kim-em/lean-csdp
+git clone https://github.com/kim-em/lean-csdp
 cd lean-csdp
 lake build
 .lake/build/bin/csdp-example   # Lean runs the SDP and prints the result
@@ -70,10 +70,46 @@ On Windows the lakefile expects the OpenBLAS import library at
 `vendor/mingw-libs/`; the CI workflow stages it from `$MINGW_PREFIX/lib`
 and you can do the same locally before `lake build`.
 
+## Using `lean-csdp` as a Lake dependency
+
+Lake does not propagate transitive native-link arguments from a
+dependency to a downstream package's link step. Consumers that build
+their own `lean_exe` or `lean_lib` against `LeanCsdp` must add the
+BLAS/LAPACK link arguments themselves:
+
+```lean
+import Lake
+open System Lake DSL
+
+-- Replicate the same per-platform args lean-csdp's lakefile uses.
+def blasLapackLinkArgs : Array String :=
+  if System.Platform.isOSX then
+    #["-Wl,-syslibroot,/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-framework", "Accelerate"]
+  else if System.Platform.isWindows then
+    #["-Lvendor/mingw-libs", "-LC:/msys64/mingw64/lib",
+      "-lopenblas", "-lgfortran", "-lquadmath", "-lm"]
+  else
+    #["-L/usr/lib/x86_64-linux-gnu", "-L/usr/lib/aarch64-linux-gnu",
+      "-L/usr/lib64", "-L/usr/lib",
+      "-llapack", "-lblas", "-l:libgfortran.so.5", "-lm"]
+
+require leanCsdp from git
+  "https://github.com/kim-em/lean-csdp" @ "main"
+
+lean_exe my_tool where
+  root := `Main
+  moreLinkArgs := blasLapackLinkArgs
+```
+
+If your downstream code uses `precompileModules := true`, add
+`moreLinkArgs := blasLapackLinkArgs` to the corresponding `lean_lib`
+declaration too.
+
 ## Repository layout
 
 ```
-csdp/                  # CSDP 6.2.0 source (git submodule)
+csdp/                  # CSDP 6.2.0 vendored source (was a submodule; see csdp/UPSTREAM.md)
 ffi/lean_csdp.c        # C glue translating flat sparse data to CSDP structs
 ffi/lean_csdp_bridge.c # Lean-callable entry points
 LeanCsdp/Basic.lean    # Lean-side types + opaque FFI declarations

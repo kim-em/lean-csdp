@@ -1,3 +1,0 @@
-[submodule "csdp"]
-	path = csdp
-	url = https://github.com/coin-or/Csdp.git
