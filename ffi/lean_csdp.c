@@ -11,9 +11,78 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#  include <io.h>
+#  include <fcntl.h>
+#  define csdp_dup       _dup
+#  define csdp_dup2      _dup2
+#  define csdp_close     _close
+#  define csdp_open      _open
+#  define CSDP_O_WRONLY  _O_WRONLY
+#  define CSDP_DEVNULL   "NUL"
+#else
+#  include <unistd.h>
+#  include <fcntl.h>
+#  define csdp_dup       dup
+#  define csdp_dup2      dup2
+#  define csdp_close     close
+#  define csdp_open      open
+#  define CSDP_O_WRONLY  O_WRONLY
+#  define CSDP_DEVNULL   "/dev/null"
+#endif
+
 /* declarations.h transitively includes blockmat.h. */
 #include "declarations.h"
 #include "lean_csdp.h"
+
+/*
+ * CSDP's `easy_sdp` (and the underlying `sdp` solver) unconditionally
+ * print solver banners, iteration logs, objective values, and DIMACS
+ * error measures to stdout/stderr. That noise is harmful in two ways:
+ *
+ *   1. It clutters consumer programs (e.g. `lake test`).
+ *   2. When invoked from inside a Lean language-server elaboration step
+ *      (e.g. a tactic call evaluated by VSCode's Lean extension), the
+ *      stray writes corrupt the LSP JSON-RPC channel on stdout and can
+ *      stall the editor.
+ *
+ * This helper redirects fds 1 and 2 to /dev/null around a block of
+ * code, restoring them afterwards. POSIX and Windows both support the
+ * dup/dup2/open primitives we use.
+ */
+typedef struct {
+  int saved_stdout;
+  int saved_stderr;
+  int devnull;
+} silenced_io_t;
+
+static void silence_stdio_begin(silenced_io_t *s) {
+  s->saved_stdout = -1;
+  s->saved_stderr = -1;
+  s->devnull = -1;
+  fflush(stdout);
+  fflush(stderr);
+  s->devnull = csdp_open(CSDP_DEVNULL, CSDP_O_WRONLY);
+  if (s->devnull < 0) return;
+  s->saved_stdout = csdp_dup(1);
+  s->saved_stderr = csdp_dup(2);
+  csdp_dup2(s->devnull, 1);
+  csdp_dup2(s->devnull, 2);
+}
+
+static void silence_stdio_end(silenced_io_t *s) {
+  fflush(stdout);
+  fflush(stderr);
+  if (s->saved_stdout >= 0) {
+    csdp_dup2(s->saved_stdout, 1);
+    csdp_close(s->saved_stdout);
+  }
+  if (s->saved_stderr >= 0) {
+    csdp_dup2(s->saved_stderr, 2);
+    csdp_close(s->saved_stderr);
+  }
+  if (s->devnull >= 0) csdp_close(s->devnull);
+}
 
 static int abs_int(int x) { return x < 0 ? -x : x; }
 
@@ -274,8 +343,13 @@ int lean_csdp_solve(int nblocks, const int *block_sizes, int num_constraints,
   /* Allocate an initial X, Z, y. CSDP provides initsoln() for this. */
   initsoln(n, num_constraints, C, a_csdp, constraints, &X, &y_csdp, &Z);
 
-  ret = easy_sdp(n, num_constraints, C, a_csdp, constraints, constant_offset,
-                 &X, &y_csdp, &Z, pobj_out, dobj_out);
+  {
+    silenced_io_t s;
+    silence_stdio_begin(&s);
+    ret = easy_sdp(n, num_constraints, C, a_csdp, constraints, constant_offset,
+                   &X, &y_csdp, &Z, pobj_out, dobj_out);
+    silence_stdio_end(&s);
+  }
 
   blockmatrix_to_flat(&X, X_out);
   blockmatrix_to_flat(&Z, Z_out);
