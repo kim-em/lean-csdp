@@ -75,6 +75,10 @@ private def someDirContainsPrefix (dirs : Array FilePath)
     (prefixes : Array String) : IO Bool := do
   dirs.anyM fun dir => dirContainsPrefix dir prefixes
 
+private def someDirContainsExact (dirs : Array FilePath) (name : String) :
+    IO Bool :=
+  dirs.anyM fun dir => (dir / name).pathExists
+
 private def missingNativeDepsMessage (pkgDir : FilePath) : IO (Option String) := do
   if System.Platform.isOSX then
     let sdkOk ← (macSdkPath : FilePath).isDir
@@ -111,7 +115,11 @@ private def missingNativeDepsMessage (pkgDir : FilePath) : IO (Option String) :=
   else
     let lapackOk ← someDirContainsPrefix linuxLibDirs #["liblapack.so", "liblapack.a"]
     let blasOk ← someDirContainsPrefix linuxLibDirs #["libblas.so", "libblas.a"]
-    let gfortranOk ← someDirContainsPrefix linuxLibDirs #["libgfortran.so.5"]
+    -- The link arg is `-l:libgfortran.so.5`, which requires that exact
+    -- filename; matching the prefix would falsely pass when only a
+    -- versioned file like `libgfortran.so.5.0.0` is present without the
+    -- SONAME symlink.
+    let gfortranOk ← someDirContainsExact linuxLibDirs "libgfortran.so.5"
     if lapackOk && blasOk && gfortranOk then
       return none
     return some "lean-csdp: missing Linux native dependencies for CSDP.\n\n\
@@ -178,12 +186,12 @@ private def csdpOTarget (pkg : Package) (nativeDeps : Job Unit) (src : String) :
 
 def bridgeSrcs : Array String := #["lean_csdp.c", "lean_csdp_bridge.c"]
 
-private def bridgeOTarget (pkg : Package) (src : String) :
+private def bridgeOTarget (pkg : Package) (nativeDeps : Job Unit) (src : String) :
     FetchM (Job FilePath) := do
   let stem := src.dropEnd 2
   let oFile := pkg.dir / defaultBuildDir / "ffi" / s!"{stem}.o"
   let srcTarget ← inputTextFile <| pkg.dir / "ffi" / src
-  buildFileAfterDep oFile srcTarget fun srcFile => do
+  buildFileAfterDep oFile (srcTarget.add nativeDeps) fun srcFile => do
     let leanInc := (← getLeanIncludeDir).toString
     let csdpInc := (pkg.dir / "csdp" / "include").toString
     let ffiInc  := (pkg.dir / "ffi").toString
@@ -206,7 +214,7 @@ extern_lib leancsdp (pkg) := do
   let name := nameToStaticLib "leancsdp"
   let nativeDeps ← checkNativeDepsJob pkg
   let csdpOs ← csdpSrcs.mapM (csdpOTarget pkg nativeDeps)
-  let bridgeOs ← bridgeSrcs.mapM (bridgeOTarget pkg)
+  let bridgeOs ← bridgeSrcs.mapM (bridgeOTarget pkg nativeDeps)
   buildStaticLib (pkg.staticLibDir / name) (csdpOs ++ bridgeOs)
 
 /-- Check that the platform BLAS/LAPACK runtime expected by `lake build`
