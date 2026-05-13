@@ -49,6 +49,88 @@ def blasLapackLinkArgs : Array String :=
        "-L/usr/lib",
        "-llapack", "-lblas", "-l:libgfortran.so.5", "-lm" ]
 
+def linuxLibDirs : Array FilePath := #[
+  "/usr/lib/x86_64-linux-gnu",
+  "/usr/lib/aarch64-linux-gnu",
+  "/usr/lib64",
+  "/usr/lib"
+]
+
+def windowsLibDirs (pkgDir : FilePath) : Array FilePath := #[
+  pkgDir / "vendor" / "mingw-libs",
+  "C:/msys64/mingw64/lib"
+]
+
+private def dirContainsPrefix (dir : FilePath) (prefixes : Array String) :
+    IO Bool := do
+  let entries ← try
+    dir.readDir
+  catch _ =>
+    return false
+  return entries.any fun entry =>
+    let name := entry.fileName
+    prefixes.any fun p => name.startsWith p
+
+private def someDirContainsPrefix (dirs : Array FilePath)
+    (prefixes : Array String) : IO Bool := do
+  dirs.anyM fun dir => dirContainsPrefix dir prefixes
+
+private def missingNativeDepsMessage (pkgDir : FilePath) : IO (Option String) := do
+  if System.Platform.isOSX then
+    let sdkOk ← (macSdkPath : FilePath).isDir
+    let accelOk ← ((macSdkPath : FilePath) / "System" / "Library" / "Frameworks" /
+      "Accelerate.framework")
+      |>.isDir
+    if sdkOk && accelOk then
+      return none
+    return some s!"lean-csdp: missing macOS native dependency for CSDP.\n\n\
+      Expected the Command Line Tools SDK at:\n\
+        {macSdkPath}\n\n\
+      Install it with:\n\
+        xcode-select --install\n\n\
+      If Xcode is installed but the CLT SDK path is absent, create the SDK \
+      link used by this lakefile:\n\
+        sudo mkdir -p /Library/Developer/CommandLineTools/SDKs\n\
+        sudo ln -sfn $(xcrun --show-sdk-path) {macSdkPath}"
+  else if System.Platform.isWindows then
+    let dirs := windowsLibDirs pkgDir
+    let openblasOk ← someDirContainsPrefix dirs #["libopenblas", "openblas"]
+    let gfortranOk ← someDirContainsPrefix dirs #["libgfortran", "gfortran"]
+    let quadmathOk ← someDirContainsPrefix dirs #["libquadmath", "quadmath"]
+    if openblasOk && gfortranOk && quadmathOk then
+      return none
+    return some s!"lean-csdp: missing Windows native dependencies for CSDP.\n\n\
+      Expected OpenBLAS/gfortran/quadmath import libraries in one of:\n\
+        {pkgDir / "vendor" / "mingw-libs"}\n\
+        C:/msys64/mingw64/lib\n\n\
+      In an MSYS2 MINGW64 shell, install them with:\n\
+        pacman -S mingw-w64-x86_64-openblas mingw-w64-x86_64-gcc-fortran\n\n\
+      If MSYS2 is not installed at C:/msys64, copy the relevant \
+      libopenblas*, libgfortran*, and libquadmath* files from \
+      $MINGW_PREFIX/lib into vendor/mingw-libs/ before running lake build."
+  else
+    let lapackOk ← someDirContainsPrefix linuxLibDirs #["liblapack.so", "liblapack.a"]
+    let blasOk ← someDirContainsPrefix linuxLibDirs #["libblas.so", "libblas.a"]
+    let gfortranOk ← someDirContainsPrefix linuxLibDirs #["libgfortran.so.5"]
+    if lapackOk && blasOk && gfortranOk then
+      return none
+    return some "lean-csdp: missing Linux native dependencies for CSDP.\n\n\
+      Expected BLAS, LAPACK, and the gfortran runtime in a standard system \
+      library directory.\n\n\
+      On Debian/Ubuntu, install:\n\
+        sudo apt-get install liblapack-dev libblas-dev gfortran\n\n\
+      On Fedora/RHEL, install:\n\
+        sudo dnf install lapack-devel blas-devel gcc-gfortran\n\n\
+      The lakefile links with -llapack -lblas -l:libgfortran.so.5, so the \
+      corresponding development/runtime packages must be visible to the \
+      system linker."
+
+private def checkNativeDepsJob (pkg : Package) : FetchM (Job Unit) :=
+  Job.async (caption := "lean-csdp native dependency check") do
+    addPlatformTrace
+    if let some msg ← missingNativeDepsMessage pkg.dir then
+      error msg
+
 package leanCsdp where
   -- Forwarded to every link command in the package, including the
   -- `:shared` derivations Lake generates from each `extern_lib`. Without
@@ -84,12 +166,12 @@ def csdpCFlags (pkg : Package) : Array String :=
      "-Wno-old-style-definition",
      "-I", inc.toString ]
 
-private def csdpOTarget (pkg : Package) (src : String) :
+private def csdpOTarget (pkg : Package) (nativeDeps : Job Unit) (src : String) :
     FetchM (Job FilePath) := do
   let stem := src.dropEnd 2
   let oFile := pkg.dir / defaultBuildDir / "csdp" / s!"{stem}.o"
   let srcTarget ← inputTextFile <| pkg.dir / "csdp" / "lib" / src
-  buildFileAfterDep oFile srcTarget fun srcFile => do
+  buildFileAfterDep oFile (srcTarget.add nativeDeps) fun srcFile => do
     compileO oFile srcFile (csdpCFlags pkg)
 
 /-! ## Lean ↔ CSDP bridge. -/
@@ -122,9 +204,20 @@ package-level `moreLinkArgs` provides.
 -/
 extern_lib leancsdp (pkg) := do
   let name := nameToStaticLib "leancsdp"
-  let csdpOs ← csdpSrcs.mapM (csdpOTarget pkg)
+  let nativeDeps ← checkNativeDepsJob pkg
+  let csdpOs ← csdpSrcs.mapM (csdpOTarget pkg nativeDeps)
   let bridgeOs ← bridgeSrcs.mapM (bridgeOTarget pkg)
   buildStaticLib (pkg.staticLibDir / name) (csdpOs ++ bridgeOs)
+
+/-- Check that the platform BLAS/LAPACK runtime expected by `lake build`
+is visible before invoking the native linker. -/
+script checkNativeDeps (_args) do
+  let cwd ← IO.currentDir
+  if let some msg ← missingNativeDepsMessage cwd then
+    IO.eprintln msg
+    return 1
+  IO.println "lean-csdp: native dependencies look available."
+  return 0
 
 /-! ## Lean library and executables.
 
