@@ -58,6 +58,16 @@ lake build
 .lake/build/bin/csdp-example   # Lean runs the SDP and prints the result
 ```
 
+If the native dependency setup is unclear, run the preflight check:
+
+```
+lake script run checkNativeDeps
+```
+
+The same check also runs before compiling CSDP's C sources, so a fresh
+`lake build` should fail with platform-specific install instructions
+instead of a bare linker error when BLAS/LAPACK is unavailable.
+
 System dependencies (matching what CI installs):
 
 | Platform | What you need                                       |
