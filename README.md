@@ -1,6 +1,6 @@
-# lean-csdp
+# csdp-ffi
 
-[![CI](https://github.com/kim-em/lean-csdp/actions/workflows/ci.yml/badge.svg)](https://github.com/kim-em/lean-csdp/actions/workflows/ci.yml)
+[![CI](https://github.com/kim-em/csdp-ffi/actions/workflows/ci.yml/badge.svg)](https://github.com/kim-em/csdp-ffi/actions/workflows/ci.yml)
 
 Lean 4 FFI bindings for the [CSDP](https://github.com/coin-or/Csdp)
 semidefinite-programming solver. Wraps the high-level `easy_sdp` entry
@@ -12,14 +12,14 @@ subject to   tr(Aᵢ · X) = bᵢ        for i = 1, …, k
              X ⪰ 0  with block-diagonal structure
 ```
 
-CSDP itself (release 6.2.0) is vendored under `csdp/`; this package
-builds it from source against the system BLAS/LAPACK runtime.
+CSDP itself (release 6.2.0) is vendored under `vendored/csdp/`; this
+package builds it from source against the system BLAS/LAPACK runtime.
 
 ## Using
 
 ```lean
-import LeanCsdp
-open LeanCsdp
+import CSDP
+open CSDP
 
 -- Block sizes: positive => SDP block of that order;
 -- negative => LP-style diagonal block of order |size|.
@@ -46,14 +46,14 @@ values (`.sdp n entries` for column-major SDP blocks, `.diag n entries`
 for diagonal blocks); `Solution.y` is a flat `FloatArray` of length `k`.
 
 A worked example reproducing the canonical CSDP problem (objective
-`2.75`) lives in [`Main.lean`](Main.lean) and is run as part of CI on
+`2.75`) lives in [`Main.lean`](Main.lean) and is exercised in CI on
 each platform.
 
 ## Building locally
 
 ```
-git clone https://github.com/kim-em/lean-csdp
-cd lean-csdp
+git clone https://github.com/kim-em/csdp-ffi
+cd csdp-ffi
 lake build
 .lake/build/bin/csdp-example   # Lean runs the SDP and prints the result
 ```
@@ -80,18 +80,18 @@ On Windows the lakefile expects the OpenBLAS import library at
 `vendor/mingw-libs/`; the CI workflow stages it from `$MINGW_PREFIX/lib`
 and you can do the same locally before `lake build`.
 
-## Using `lean-csdp` as a Lake dependency
+## Using `csdp-ffi` as a Lake dependency
 
 Lake does not propagate transitive native-link arguments from a
 dependency to a downstream package's link step. Consumers that build
-their own `lean_exe` or `lean_lib` against `LeanCsdp` must add the
+their own `lean_exe` or `lean_lib` against `CSDP` must add the
 BLAS/LAPACK link arguments themselves:
 
 ```lean
 import Lake
 open System Lake DSL
 
--- Replicate the same per-platform args lean-csdp's lakefile uses.
+-- Replicate the same per-platform args csdp-ffi's lakefile uses.
 def blasLapackLinkArgs : Array String :=
   if System.Platform.isOSX then
     #["-Wl,-syslibroot,/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
@@ -104,8 +104,8 @@ def blasLapackLinkArgs : Array String :=
       "-L/usr/lib64", "-L/usr/lib",
       "-llapack", "-lblas", "-l:libgfortran.so.5", "-lm"]
 
-require leanCsdp from git
-  "https://github.com/kim-em/lean-csdp" @ "main"
+require CSDP from git
+  "https://github.com/kim-em/csdp-ffi" @ "main"
 
 lean_exe my_tool where
   root := `Main
@@ -119,11 +119,11 @@ declaration too.
 ## Repository layout
 
 ```
-csdp/                  # CSDP 6.2.0 vendored source (was a submodule; see csdp/UPSTREAM.md)
+vendored/csdp/         # CSDP 6.2.0 vendored source (was a submodule; see vendored/csdp/UPSTREAM.md)
 ffi/lean_csdp.c        # C glue translating flat sparse data to CSDP structs
 ffi/lean_csdp_bridge.c # Lean-callable entry points
-LeanCsdp/Basic.lean    # Lean-side types + opaque FFI declarations
-Main.lean              # Worked example (used as smoke test)
+CSDP/Basic.lean        # Lean-side types + opaque FFI declarations
+Main.lean              # Worked example exercised in CI
 lakefile.lean          # Build configuration
 scripts/install-toolchain.sh  # Lean toolchain installer with GitHub-release fallback
 ```
@@ -131,4 +131,4 @@ scripts/install-toolchain.sh  # Lean toolchain installer with GitHub-release fal
 ## Licence
 
 Apache License 2.0 (see [LICENSE](LICENSE)). CSDP itself is distributed
-under the [Eclipse Public License 1.0](csdp/LICENSE).
+under the [Eclipse Public License 1.0](vendored/csdp/LICENSE).

@@ -12,7 +12,7 @@
   or an LP-style diagonal block (size n, just the n diagonal entries).
 -/
 
-namespace LeanCsdp
+namespace CSDP
 
 /--
 A nonzero entry in a block-diagonal symmetric matrix. Indices are 1-based,
@@ -191,4 +191,4 @@ def solve (p : Problem) : Solution :=
     y    := raw.y
     Z    := splitBlocks p.blockSizes raw.Z }
 
-end LeanCsdp
+end CSDP

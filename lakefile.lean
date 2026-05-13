@@ -87,7 +87,7 @@ private def missingNativeDepsMessage (pkgDir : FilePath) : IO (Option String) :=
       |>.isDir
     if sdkOk && accelOk then
       return none
-    return some s!"lean-csdp: missing macOS native dependency for CSDP.\n\n\
+    return some s!"csdp-ffi: missing macOS native dependency for CSDP.\n\n\
       Expected the Command Line Tools SDK at:\n\
         {macSdkPath}\n\n\
       Install it with:\n\
@@ -103,7 +103,7 @@ private def missingNativeDepsMessage (pkgDir : FilePath) : IO (Option String) :=
     let quadmathOk ← someDirContainsPrefix dirs #["libquadmath", "quadmath"]
     if openblasOk && gfortranOk && quadmathOk then
       return none
-    return some s!"lean-csdp: missing Windows native dependencies for CSDP.\n\n\
+    return some s!"csdp-ffi: missing Windows native dependencies for CSDP.\n\n\
       Expected OpenBLAS/gfortran/quadmath import libraries in one of:\n\
         {pkgDir / "vendor" / "mingw-libs"}\n\
         C:/msys64/mingw64/lib\n\n\
@@ -122,7 +122,7 @@ private def missingNativeDepsMessage (pkgDir : FilePath) : IO (Option String) :=
     let gfortranOk ← someDirContainsExact linuxLibDirs "libgfortran.so.5"
     if lapackOk && blasOk && gfortranOk then
       return none
-    return some "lean-csdp: missing Linux native dependencies for CSDP.\n\n\
+    return some "csdp-ffi: missing Linux native dependencies for CSDP.\n\n\
       Expected BLAS, LAPACK, and the gfortran runtime in a standard system \
       library directory.\n\n\
       On Debian/Ubuntu, install:\n\
@@ -134,12 +134,12 @@ private def missingNativeDepsMessage (pkgDir : FilePath) : IO (Option String) :=
       system linker."
 
 private def checkNativeDepsJob (pkg : Package) : FetchM (Job Unit) :=
-  Job.async (caption := "lean-csdp native dependency check") do
+  Job.async (caption := "csdp-ffi native dependency check") do
     addPlatformTrace
     if let some msg ← missingNativeDepsMessage pkg.dir then
       error msg
 
-package leanCsdp where
+package CSDP where
   -- Forwarded to every link command in the package, including the
   -- `:shared` derivations Lake generates from each `extern_lib`. Without
   -- this, building `csdp.dll` on Windows fails to resolve BLAS / LAPACK
@@ -162,7 +162,7 @@ def csdpSrcs : Array String := #[
 ]
 
 def csdpCFlags (pkg : Package) : Array String :=
-  let inc := pkg.dir / "csdp" / "include"
+  let inc := pkg.dir / "vendored" / "csdp" / "include"
   -- CSDP's source uses K&R-style definitions and unprototyped declarations
   -- (`int foo()` meaning "any args"). Modern C compilers default to C23,
   -- where `()` means `(void)` and the K&R bodies are reported as
@@ -178,7 +178,7 @@ private def csdpOTarget (pkg : Package) (nativeDeps : Job Unit) (src : String) :
     FetchM (Job FilePath) := do
   let stem := src.dropEnd 2
   let oFile := pkg.dir / defaultBuildDir / "csdp" / s!"{stem}.o"
-  let srcTarget ← inputTextFile <| pkg.dir / "csdp" / "lib" / src
+  let srcTarget ← inputTextFile <| pkg.dir / "vendored" / "csdp" / "lib" / src
   buildFileAfterDep oFile (srcTarget.add nativeDeps) fun srcFile => do
     compileO oFile srcFile (csdpCFlags pkg)
 
@@ -193,7 +193,7 @@ private def bridgeOTarget (pkg : Package) (nativeDeps : Job Unit) (src : String)
   let srcTarget ← inputTextFile <| pkg.dir / "ffi" / src
   buildFileAfterDep oFile (srcTarget.add nativeDeps) fun srcFile => do
     let leanInc := (← getLeanIncludeDir).toString
-    let csdpInc := (pkg.dir / "csdp" / "include").toString
+    let csdpInc := (pkg.dir / "vendored" / "csdp" / "include").toString
     let ffiInc  := (pkg.dir / "ffi").toString
     compileO oFile srcFile #[
       "-O2", "-DBIT64", "-fPIC",
@@ -210,8 +210,8 @@ its own arguments. By bundling the bridge with CSDP, the resulting
 shared library only has BLAS/LAPACK as an external dependency, which the
 package-level `moreLinkArgs` provides.
 -/
-extern_lib leancsdp (pkg) := do
-  let name := nameToStaticLib "leancsdp"
+extern_lib csdp (pkg) := do
+  let name := nameToStaticLib "csdp"
   let nativeDeps ← checkNativeDepsJob pkg
   let csdpOs ← csdpSrcs.mapM (csdpOTarget pkg nativeDeps)
   let bridgeOs ← bridgeSrcs.mapM (bridgeOTarget pkg nativeDeps)
@@ -224,21 +224,21 @@ script checkNativeDeps (_args) do
   if let some msg ← missingNativeDepsMessage cwd then
     IO.eprintln msg
     return 1
-  IO.println "lean-csdp: native dependencies look available."
+  IO.println "csdp-ffi: native dependencies look available."
   return 0
 
 /-! ## Lean library and executables.
 
-`extern_lib leancsdp` produces a static-library target that Lake
+`extern_lib csdp` produces a static-library target that Lake
 automatically links into the package's Lean modules and executables.
 We don't manually reference the static lib's path here — that
 breaks downstream consumption (the relative path resolves to the
-consumer's cwd, not lean-csdp's). The `moreLinkArgs` only adds the
+consumer's cwd, not csdp-ffi's). The `moreLinkArgs` only adds the
 BLAS/LAPACK runtime linker args, which Lake doesn't infer.
 -/
 
 @[default_target]
-lean_lib LeanCsdp where
+lean_lib CSDP where
   precompileModules := true
   moreLinkArgs := blasLapackLinkArgs
 

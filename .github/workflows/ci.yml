@@ -41,7 +41,7 @@ jobs:
           ./scripts/install-toolchain.sh
 
       - name: Build
-        run: lake build LeanCsdp csdp-example
+        run: lake build CSDP csdp-example
 
       - name: Run example
         run: |
@@ -93,7 +93,7 @@ jobs:
           ./scripts/install-toolchain.sh
 
       - name: Build
-        run: lake build LeanCsdp csdp-example
+        run: lake build CSDP csdp-example
 
       - name: Run example
         run: |
@@ -153,7 +153,7 @@ jobs:
           export ELAN_HOME="$ELAN_DIR_MSYS"
           export PATH="$ELAN_DIR_MSYS/bin:$MINGW_PREFIX/bin:$PATH"
           ./scripts/install-toolchain.sh
-          lake build LeanCsdp csdp-example
+          lake build CSDP csdp-example
           set +e
           ./.lake/build/bin/csdp-example.exe > /tmp/csdp.out 2>&1
           rc=$?
