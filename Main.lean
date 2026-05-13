@@ -5,9 +5,9 @@
   with known optimal objective tr(C·X) = 2.75.
 -/
 
-import LeanCsdp
+import CSDP
 
-open LeanCsdp
+open CSDP
 
 def cExample : Array Triple := #[
   -- Block 1 (2x2)
