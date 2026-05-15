@@ -1,6 +1,6 @@
 # csdp-ffi
 
-[![CI](https://github.com/kim-em/csdp-ffi/actions/workflows/ci.yml/badge.svg)](https://github.com/kim-em/csdp-ffi/actions/workflows/ci.yml)
+[![CI](https://github.com/leanprover/csdp-ffi/actions/workflows/ci.yml/badge.svg)](https://github.com/leanprover/csdp-ffi/actions/workflows/ci.yml)
 
 Lean 4 FFI bindings for the [CSDP](https://github.com/coin-or/Csdp)
 semidefinite-programming solver. Wraps the high-level `easy_sdp` entry
@@ -52,7 +52,7 @@ each platform.
 ## Building locally
 
 ```
-git clone https://github.com/kim-em/csdp-ffi
+git clone https://github.com/leanprover/csdp-ffi
 cd csdp-ffi
 lake build
 .lake/build/bin/csdp-example   # Lean runs the SDP and prints the result
@@ -105,7 +105,7 @@ def blasLapackLinkArgs : Array String :=
       "-llapack", "-lblas", "-l:libgfortran.so.5", "-lm"]
 
 require CSDP from git
-  "https://github.com/kim-em/csdp-ffi" @ "main"
+  "https://github.com/leanprover/csdp-ffi" @ "main"
 
 lean_exe my_tool where
   root := `Main
